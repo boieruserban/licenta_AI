@@ -16,6 +16,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, DISABLED, NORMAL
 
 
+from .model import CLIPClassifier
+
 def main():
     print('Taining NN model ...')
 
