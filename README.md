@@ -17,6 +17,11 @@ MacOS:
 source env/bin/activate
 ```
 
+Windows:
+```sh
+./Scripts/Activate.ps1
+```
+
 ### Install dependencies
 
 ```sh
