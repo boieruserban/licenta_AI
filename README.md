@@ -1,1 +1,1 @@
-# licenta_AI
+# Detecția Emoțiilor cu CLIP - Proiect de Licență
