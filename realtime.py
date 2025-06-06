@@ -1,61 +1,166 @@
-import cv2
-import torch
+from __future__ import annotations
 import time
-from PIL import Image
-from data import data_transform, emotion_classes
+from pathlib import Path
+from typing import List, Tuple
 
+import cv2
+import numpy as np
+import torch
+from PIL import Image
+
+from data import data_transform, emotion_classes          
+
+# ---------------------------------------------------------------
+# Setup
+# ---------------------------------------------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+# Model files (relative paths are resolved next to this .py file)
+_THIS_DIR = Path(__file__).resolve().parent
+FACE_PROTO  = str(_THIS_DIR / "deploy.prototxt")
+FACE_MODEL = str(_THIS_DIR / "res10_300x300_ssd_iter_140000.caffemodel")
 
-def real_time_detection(classifier):
+# Load the face detector
+face_net = cv2.dnn.readNetFromCaffe(FACE_PROTO, FACE_MODEL)
+
+# Use CUDA for the detector if OpenCV is built with it and the user has a GPU
+if cv2.cuda.getCudaEnabledDeviceCount() > 0:
+    face_net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+    face_net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA_FP16)
+else:
+    # Default to CPU – this works everywhere
+    face_net.setPreferableBackend(cv2.dnn.DNN_BACKEND_DEFAULT)
+    face_net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+
+
+# ---------------------------------------------------------------
+# Face-detection helper
+# ---------------------------------------------------------------
+def detect_faces_dnn(
+    frame: np.ndarray,
+    net: cv2.dnn_Net,
+    conf_threshold: float = 0.6,
+) -> List[Tuple[int, int, int, int]]:
+    """
+    Runs the OpenCV DNN SSD face detector on a single BGR frame and
+    returns a list of bounding boxes (x1, y1, x2, y2).
+    """
+    (h, w) = frame.shape[:2]
+
+    # Prepare blob & forward
+    blob = cv2.dnn.blobFromImage(
+        frame,
+        scalefactor=1.0,
+        size=(300, 300),
+        mean=(104.0, 177.0, 123.0),
+        swapRB=False,
+        crop=False,
+    )
+    net.setInput(blob)
+    detections = net.forward()              # shape = (1, 1, N, 7)
+
+    boxes: List[Tuple[int, int, int, int]] = []
+    for i in range(detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+        if confidence < conf_threshold:
+            continue
+
+        # Extract box
+        (x1, y1, x2, y2) = (detections[0, 0, i, 3:7] * np.array([w, h, w, h])).astype(int)
+        # Clamp to image bounds
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w - 1, x2), min(h - 1, y2)
+        if (x2 - x1) > 10 and (y2 - y1) > 10:   # ignore tiny boxes
+            boxes.append((x1, y1, x2, y2))
+
+    return boxes
+
+
+# ---------------------------------------------------------------
+# Real-time loop
+# ---------------------------------------------------------------
+def real_time_detection(classifier: torch.nn.Module) -> None:
+    """
+    Opens the default webcam, finds faces with OpenCV DNN, predicts
+    emotions with the supplied classifier, and overlays results.
+    Press 'q' to quit.
+    """
+    # Put classifier in eval mode & move to correct device once
+    classifier.to(device).eval()
+
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("Error: Could not open webcam.")
         return
 
-    UPDATE_INTERVAL = 3.0
-    last_update_time = time.time()
-    stored_face_results = []
+    UPDATE_INTERVAL_SEC = 2.0          # how often to re-evaluate faces
+    last_update_time = 0.0
+    cached_results: List[Tuple[Tuple[int, int, int, int], List[Tuple[str, float]]]] = []
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print("Warning: Empty frame – terminating.")
+                break
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+            now = time.time()
 
-        now = time.time()
-        if (now - last_update_time) >= UPDATE_INTERVAL:
-            stored_face_results = []
-            for (x, y, w, h) in faces:
-                roi = frame[y:y+h, x:x+w]
-                img_pil = Image.fromarray(cv2.cvtColor(roi, cv2.COLOR_BGR2RGB))
-                img_tensor = data_transform(img_pil).unsqueeze(0).to(device)
+            # Re-run the detector & classifier at the desired interval
+            if (now - last_update_time) >= UPDATE_INTERVAL_SEC:
+                last_update_time = now
+                cached_results.clear()
 
-                with torch.no_grad():
-                    output = classifier(img_tensor)
-                    probs = torch.softmax(output, dim=1).cpu().numpy()[0]
+                boxes = detect_faces_dnn(frame, face_net, conf_threshold=0.6)
 
-                sorted_indices = probs.argsort()[::-1]
-                emotions_list = [(emotion_classes[idx], probs[idx]) for idx in sorted_indices]
-                stored_face_results.append(((x, y, w, h), emotions_list))
-            last_update_time = now
+                for (x1, y1, x2, y2) in boxes:
+                    face_bgr = frame[y1:y2, x1:x2]
+                    if face_bgr.size == 0:
+                        continue
 
-        for (box, emotion_data) in stored_face_results:
-            (x, y, w, h) = box
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                    # Convert to PIL RGB for transform pipeline
+                    face_rgb = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2RGB)
+                    pil_img  = Image.fromarray(face_rgb)
+                    tensor   = data_transform(pil_img).unsqueeze(0).to(device)
 
-            for i, (emotion_label, prob) in enumerate(emotion_data):
-                label_str = f"{emotion_label}: {prob*100:.1f}%"
-                cv2.putText(frame, label_str, (x, y - 10 - i*20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    with torch.no_grad():
+                        logits = classifier(tensor)
+                        probs  = torch.softmax(logits, dim=1).cpu().numpy()[0]
 
-        cv2.imshow("Real-Time Emotion Detection", frame)
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
-            break
+                    # Sort descending
+                    top_indices = probs.argsort()[::-1]
+                    emotions = [(emotion_classes[i], float(probs[i])) for i in top_indices]
+                    cached_results.append(((x1, y1, x2, y2), emotions))
 
-    cap.release()
-    cv2.destroyAllWindows()
+            # ------------------------------------------------------------------
+            # Draw cached results (we always draw, even when not updating,
+            # so the overlay stays visible while we wait for the next update)
+            # ------------------------------------------------------------------
+            for ((x1, y1, x2, y2), emotions) in cached_results:
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
+
+                # Show the top-3 emotions
+                for idx, (label, prob) in enumerate(emotions):
+                    text = f"{label}: {prob * 100:.1f}%"
+                    y_text = y1 - 10 - idx * 20
+                    if y_text < 10:         # keep text on-screen
+                        y_text = y1 + 20 + idx * 20
+                    cv2.putText(
+                        frame,
+                        text,
+                        (x1, y_text),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6,
+                        (0, 255, 0),
+                        2,
+                        cv2.LINE_AA,
+                    )
+
+            cv2.imshow("Real-Time Emotion Detection", frame)
+            key = cv2.waitKey(1) & 0xFF
+            if key in (ord("q"), 27):        # q or ESC
+                break
+
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
