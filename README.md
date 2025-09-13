@@ -2,107 +2,93 @@ Proiect de Licență - Detecția Emoțiilor cu CLIP
 Acest proiect implementează un sistem de detecție a emoțiilor în imagini statice și în timp real, folosind modelul CLIP de la OpenAI, adaptat pentru clasificarea expresiilor faciale.
 
 **Python Version:** 3.9.13
-Structura proiectului
 
-Structura proiectului
-licenta_AI/
-├── data.py                   # Preprocesare și încărcare dataset (HuggingFace Datasets)
-├── evaluate.py               # Generare matrice de confuzie și rapoarte de clasificare
-├── gui.py                    # Interfață grafică (Tkinter) pentru antrenare/testare model
-├── main.py                   # Punct de intrare aplicație (lansare GUI)
-├── model.py                  # Definirea arhitecturii CLIPClassifier
-├── realtime.py               # Detecție emoții în timp real cu OpenCV și DNN face detector
-├── train.py                  # Funcții de antrenare + evaluare (inclusiv Zero-Shot CLIP)
-├── deploy.prototxt           # Configurație rețea pentru face detector (Caffe model)
-├── res10_300x300_ssd_iter_140000.caffemodel # Model binar pentru face detector
-├── requirements.txt          # Lista dependențelor
-├── README.md                 # Documentația proiectului
-├── .gitignore                # Fișiere ignorate (venv, pyc, cache etc.)
-└── venv/                     # Mediu virtual (nu se urcă pe GitHub)
+##  Structura proiectului
 
-⚙️ Librării folosite
+    licenta_AI/
+    ├── data.py                   # Preprocesare și încărcare dataset
+    ├── evaluate.py               # Matrice de confuzie & rapoarte de clasificare
+    ├── gui.py                    # Interfață grafică (Tkinter)
+    ├── main.py                   # Punct de intrare aplicație (GUI)
+    ├── model.py                  # Arhitectura CLIPClassifier
+    ├── realtime.py               # Detecție emoții în timp real (OpenCV + DNN face detector)
+    ├── train.py                  # Antrenare + evaluare + Zero-Shot CLIP
+    ├── deploy.prototxt           # Configurație rețea detector fețe (Caffe)
+    ├── res10_300x300_ssd_iter_140000.caffemodel   # Modelul detectorului de fețe
+    ├── requirements.txt          # Dependențe
+    ├── README.md                 # Documentație
+    └── .gitignore                # Fișiere ignorate
 
-PyTorch (torch) – antrenare și inferență model.
+---
 
-Torchvision – transformări de imagini.
+##  Tehnologii & Librării
+- **PyTorch** – rețele neuronale
+- **Torchvision** – transformări de imagini
+- **Transformers (HuggingFace)** – modelul CLIP
+- **Datasets** – încărcarea dataset-ului `tukey/human_face_emotions_roboflow`
+- **OpenCV** – acces webcam + detector fețe (SSD)
+- **Pillow** – procesare imagini
+- **Scikit-learn** – rapoarte de clasificare / matrice de confuzie
+- **Matplotlib & Seaborn** – vizualizări
+- **Tkinter** – interfață grafică
 
-Transformers (HuggingFace) – încărcarea modelului CLIP.
+---
 
-Datasets – încărcarea dataset-ului tukey/human_face_emotions_roboflow.
+##  Instalare & Rulare
 
-OpenCV (cv2) – detecția fețelor + accesarea webcam-ului.
+1) Clonează repository-ul
 
-Pillow (PIL) – procesare imagini.
+        git clone <repo_url>
+        cd licenta_AI
 
-NumPy – operații numerice.
+2) Creează și activează mediul virtual
 
-Scikit-learn – clasificare și matrice de confuzie.
+        python -m venv venv
 
-Matplotlib & Seaborn – vizualizare rezultate.
+   Windows:
 
-Tkinter – interfața grafică.
+        venv\Scripts\activate
 
- Cum rulezi proiectul
+   Linux / Mac:
 
-Clonează repository-ul sau descarcă local:
+        source venv/bin/activate
 
-git clone <repo_url>
-cd licenta_AI
+3) Instalează dependențele
 
+        pip install -r requirements.txt
 
-Creează și activează mediul virtual:
+4) Rulează aplicația GUI
 
-python -m venv venv
-# Windows
-venv\Scripts\activate
-# Linux/Mac
-source venv/bin/activate
+        python main.py
 
+---
 
-Instalează dependențele:
+##  Funcționalități
+- Antrenarea modelului **CLIPClassifier** pe dataset-ul de emoții
+- Evaluare clasică: matrice de confuzie & rapoarte de clasificare
+- Evaluare **Zero-Shot CLIP** (fără fine-tuning)
+- Clasificare imagini statice din GUI
+- Detecție emoții în timp real (webcam) cu **SSD face detector**
+- Interfață grafică cu:
+  - setare hiperparametri (epochs, batch size, learning rate, weight decay)
+  - bară de progres pentru antrenare
+  - log-uri în timp real
+  - butoane: **Train / Save / Load / Evaluate / Zero-Shot / Real-time**
 
-pip install -r requirements.txt
+---
 
+##  Modelul antrenat
+Modelul `.pth` nu este inclus în repository (limitări GitHub). Poate fi descărcat de aici:
 
-Rulează aplicația GUI:
-
-python main.py
-
-Funcționalități
-
-Antrenare model CLIPClassifier pe dataset-ul de emoții.
-
-Evaluare clasică: matrice de confuzie + rapoarte de clasificare.
-
-Evaluare Zero-Shot cu CLIP (fără fine-tuning).
-
-Clasificare imagini statice prin GUI.
-
-Detecție emoții în timp real folosind webcam + face detector DNN.
-
-Interfață grafică intuitivă (Tkinter) cu:
-
-setarea hiperparametrilor (batch size, epochs, learning rate, etc.)
-
-progres bar pentru antrenare
-
-log-uri detaliate în timp real
-
-butoane pentru train, save, load, evaluate
-
-Modelul antrenat
-
-Modelul .pth nu este inclus în repository din cauza limitărilor GitHub.
-Poate fi descărcat separat de la:
-
-https://drive.google.com/file/d/1Qd0rwC4tKcMVrpw5EnmJCMc8lhRqE1SW/view
+🔗 Google Drive: https://drive.google.com/file/d/1Qd0rwC4tKcMVrpw5EnmJCMc8lhRqE1SW/view?usp=sharing
 
 Plasează fișierul descărcat în directorul principal al proiectului.
 
-Dataset
+---
 
-https://huggingface.co/datasets/tukey/human_face_emotions_roboflow
-→ conține imagini etichetate pe clase de emoții de bază (fericire, tristețe, furie, surpriză etc.).
+##  Dataset
+**tukey/human_face_emotions_roboflow** – imagini etichetate pe emoții de bază (fericire, tristețe, furie, surpriză etc.).  
+HuggingFace: https://huggingface.co/datasets/tukey/human_face_emotions_roboflow
 
 
 
