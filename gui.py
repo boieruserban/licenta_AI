@@ -5,15 +5,13 @@ import torch
 from PIL import Image, ImageTk
 import queue
 import numpy as np
-
-from data import build_dataloaders, emotion_classes, data_transform
-from train import train_thread_fn
-from realtime import real_time_detection
 import torch.nn as nn
 
+from data import build_dataloaders, emotion_classes, data_transform, num_classes
+from train import train_thread_fn, zero_shot_eval
+from realtime import real_time_detection
 from model import build_model, freeze_clip_layers
-from data import num_classes
-import torch
+from evaluate import compute_confusion_matrix_report
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -64,6 +62,12 @@ class GUI:
 
         self.realtime_button = tk.Button(top_frame, text="Real-time Detection", font=("Arial", 12), state=DISABLED, command=self.realtime_detection)
         self.realtime_button.pack(side=tk.LEFT, padx=5)
+
+        self.eval_button = tk.Button(top_frame, text="Show Confusion Matrix", font=("Arial", 12), state=DISABLED, command=self.show_confusion_matrix)
+        self.eval_button.pack(side=tk.LEFT, padx=5)
+
+        self.zshot_button = tk.Button(top_frame, text="Zero-Shot Eval", font=("Arial", 12), command=self.show_zero_shot_eval)
+        self.zshot_button.pack(side=tk.LEFT, padx=5)
 
         self.train_progress = ttk.Progressbar(top_frame, orient="horizontal", length=200,
                                               mode="determinate", variable=self.progress_var)
@@ -125,6 +129,7 @@ class GUI:
         self.train_button.config(state=DISABLED)
         self.classify_button.config(state=DISABLED)
         self.realtime_button.config(state=DISABLED)
+        self.eval_button.config(state=DISABLED)
         self.log_text.delete("1.0", tk.END)
         self.progress_var.set(0.0)
 
@@ -132,6 +137,7 @@ class GUI:
             self.train_button.config(state=NORMAL)
             self.classify_button.config(state=NORMAL)
             self.realtime_button.config(state=NORMAL)
+            self.eval_button.config(state=NORMAL)
             self.training_in_progress = False
 
         t = threading.Thread(target=train_thread_fn, args=(
@@ -161,20 +167,19 @@ class GUI:
         try:
             model = build_model(num_classes)
             freeze_clip_layers(model, unfreeze_last=4)
-    
             state_dict = torch.load(file_path, map_location=device)
             model.load_state_dict(state_dict)
             model.to(device)
             model.eval()
-    
+
             self.classifier = model
-    
+
             messagebox.showinfo("Model Loaded", f"Model loaded successfully from:\n{file_path}")
-            self.classify_button.config(state=tk.NORMAL)
-            self.realtime_button.config(state=tk.NORMAL)
+            self.classify_button.config(state=NORMAL)
+            self.realtime_button.config(state=NORMAL)
+            self.eval_button.config(state=NORMAL)
         except Exception as e:
             messagebox.showerror("Error", f"Could not load model: {e}")
-
 
     def classify_image(self):
         file_path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png *.jpg *.jpeg *.bmp *.gif"), ("All Files", "*.*")])
@@ -201,3 +206,19 @@ class GUI:
 
     def realtime_detection(self):
         real_time_detection(self.classifier)
+
+    def show_confusion_matrix(self):
+        try:
+            _, val_loader = build_dataloaders(train_val_ratio=0.8, batch_size=32)
+            compute_confusion_matrix_report(self.classifier, val_loader, self.log_message, mode="Trained Model")
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not evaluate: {e}")
+
+    def show_zero_shot_eval(self):
+        try:
+            _, val_loader = build_dataloaders(train_val_ratio=0.8, batch_size=32)
+            acc, preds, labels = zero_shot_eval(val_loader)
+            self.log_message(f"Zero-Shot Accuracy: {acc:.2f}%")
+            compute_confusion_matrix_report((preds, labels), val_loader, self.log_message, mode="Zero-Shot")
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not run zero-shot evaluation: {e}")

@@ -130,8 +130,8 @@ dist
 .pnp.*
 
 # === Ignoră fișiere mari de model ===
-trainedmodelnew.pth
-variantatest.pth
+modelsalvat.pth
+
 
 # === Ignoră mediul virtual complet ===
 venv/
